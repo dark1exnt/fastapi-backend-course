@@ -3,11 +3,14 @@ from typing import List
 from pathlib import Path
 
 from cloud_storage import MockApiTasks, MockApiConfig, Task, TaskUpdate
+from llm_assistant import LLMAssistant
 
 app = FastAPI()
 
 MOCKAPI_API_URL = "https://68aa779b909a5835049c516f.mockapi.io/"
 MOCKAPI_RESOURCE = "tasks"
+
+llm = LLMAssistant(api_token="API_TOKEN", account_id="ACCOUNT_ID")
 
 tasks_db = MockApiTasks(MockApiConfig(api_url=MOCKAPI_API_URL, resource=MOCKAPI_RESOURCE))
 
@@ -19,6 +22,11 @@ def get_tasks() -> List[Task]:
 
 @app.post("/tasks", response_model=Task, status_code=status.HTTP_201_CREATED)
 def create_task(task: Task) -> Task:
+    answer = llm.task_llm(task.title)
+    if answer:
+        task.title = f"{task.title}\n\nРешение от AI: {answer}"
+    else:
+        task.title = f"{task.title}\n\Не удалось получить решение от AI"
     return tasks_db.add(task)
 
 
