@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException, status
 from typing import List
-from pathlib import Path
 
 from cloud_storage import MockApiTasks, MockApiConfig, Task, TaskUpdate
 from llm_assistant import LLMAssistant

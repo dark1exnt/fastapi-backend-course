@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict
 from base_http_client import BaseHTTPClient
 
 
