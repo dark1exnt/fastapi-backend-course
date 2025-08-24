@@ -1,10 +1,13 @@
+import json
 from fastapi import FastAPI, HTTPException, status
 from typing import List, Optional
 from pydantic import BaseModel
 from itertools import count
-
+from pathlib import Path
 
 app = FastAPI()
+
+DATA_FILE = Path("data/tasks.json")
 
 
 class Task(BaseModel):
@@ -18,39 +21,74 @@ class TaskUpdate(BaseModel):
     status: Optional[str] = None
 
 
-tasks_db: List[Task] = []
+class JsonTasks:
+    def __init__(self, filename: Path):
+        self.file = filename
+        if not self.file.exists():
+            self._write([])
 
-_id_seq = count(1)
+        tasks = self.get_all()
+        last_id = max((task.id or 0 for task in tasks), default=0)
+        self._id_counter = count(last_id + 1)
+    
+    def _write(self, tasks: List[Task]) -> None:
+        with self.file.open("w", encoding="utf-8") as file:
+
+            json.dump([task.model_dump() for task in tasks], file, indent=2, ensure_ascii=False)
+
+    def get_all(self) -> List[Task]:
+        with self.file.open("r", encoding="utf-8") as file:
+            tasks = json.load(file)
+            return [Task(**task) for task in tasks]
+        
+    def add(self, task: Task) -> Task:
+        tasks = self.get_all()
+        task.id = next(self._id_counter)
+        tasks.append(task)
+        self._write(tasks)
+        return task
+
+    def update(self, task_id: int, task_update: TaskUpdate) -> Task:
+        tasks = self.get_all()
+        for i, task in enumerate(tasks):
+            if task.id == task_id:
+                if task_update.title is not None:
+                    task.title = task_update.title
+                if task_update.status is not None:
+                    task.status = task_update.status
+                tasks[i] = task
+                self._write(tasks)
+                return task
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    def delete(self, task_id: int) -> None:
+        tasks = self.get_all()
+        for i, task in enumerate(tasks):
+            if task.id == task_id:
+                tasks.pop(i)
+                self._write(tasks)
+                return
+        raise HTTPException(status_code=404, detail="Task not found")
+
+
+tasks_db = JsonTasks(DATA_FILE)
+
 
 
 @app.get("/tasks", response_model=List[Task])
 def get_tasks() -> List[Task]:
-    return tasks_db
+    return tasks_db.get_all()
 
 @app.post("/tasks", response_model=Task, status_code=status.HTTP_201_CREATED)
 def create_task(task: Task) -> Task:
-    task.id = next(_id_seq)
-    tasks_db.append(task)
-    return task
+    return tasks_db.add(task)
 
 @app.put("/tasks/{task_id}", response_model=Task)
 def update_task(task_id: int, task_update: TaskUpdate) -> Task:
-    for task in tasks_db:
-        if task.id == task_id:
-            if task_update.title is not None:
-                task.title = task_update.title
-            if task_update.status is not None:
-                task.status = task_update.status
-
-            return task
-    raise HTTPException(status_code=404, detail="Task not found")
+    return tasks_db.update(task_id, task_update)
 
 
 
 @app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(task_id: int) -> None:
-    for i, task in enumerate(tasks_db):
-        if task.id == task_id:
-            tasks_db.pop(i)
-            return
-    raise HTTPException(status_code=404, detail="Task not found")
+    tasks_db.delete(task_id)
